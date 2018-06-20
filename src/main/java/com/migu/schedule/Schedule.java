@@ -119,21 +119,73 @@ public class Schedule {
         synchronized (this){
             if(threshold <= 0)
                 return ReturnCodeKeys.E002;
-            // 如果当前有挂起的任务，则进行任务调度
-            if(registerInfo.getSuspendTaskMap().size() > 0)
-            {
-                RegisterInfo tempRregisterInfo = registerInfo;
-                Map<Integer/*nodeId*/,ArrayList<Integer/*taskId*/>> nodeTaskMap = new LinkedHashMap<Integer, ArrayList<Integer>>();
-                Map<Integer/*nodeId*/,TaskInfo> suspendTaskMap =  new LinkedHashMap<Integer, TaskInfo>();
-                Map<Integer/*nodeId*/,TaskInfo> runningTaskMap = new LinkedHashMap<Integer, TaskInfo>();
-               // Map<Integer/*nodeId*/, Integer/*耗时*/>
-                //采用
-                return ReturnCodeKeys.E013;
+            int tryTime = 0;
+            while(tryTime < 1000) {
+                ArrayList<TaskInfo> taskInfoList = new ArrayList<TaskInfo>();
+                queryTaskStatus(taskInfoList);
+                //算出总耗时的平均值
+                int totalConsumption = 0;
+                for (TaskInfo taskInfo : taskInfoList) {
+                    totalConsumption = taskInfo.getTaskConsumption();
+                }
+                ArrayList<Integer> nodeIdList = new ArrayList<Integer>();
+                nodeIdList.addAll(registerInfo.getNodeTaskMap().keySet());
+                Collections.sort(nodeIdList);
+                //求平均分值
+                int average = totalConsumption / nodeIdList.size();
+                //内部随机进行任务策略分布
+                Map<Integer/*nodeId*/, ArrayList<TaskInfo>> nodeTaskList = new LinkedHashMap<Integer, ArrayList<TaskInfo>>();
+                Map<Integer/*nodeId*/, ArrayList<Integer>> nodeTaskIdList = new LinkedHashMap<Integer, ArrayList<Integer>>();
+                int randomIndex = 0;
+                Iterator<TaskInfo> taskInfoIter = taskInfoList.iterator();
+                while (taskInfoIter.hasNext()) {
+                    int consumption = taskInfoIter.next().getTaskConsumption();
+                    Random rand = new Random();
+                    int randIndex = rand.nextInt(nodeIdList.size());
+                    int nodeId = nodeIdList.get(randIndex);
+                    if (null == nodeTaskList.get(nodeId)) {
+                        ArrayList<TaskInfo> tempTaskInfoList = new ArrayList<TaskInfo>();
+                        ArrayList<Integer> tempTaskIdList = new ArrayList<Integer>();
+                        tempTaskInfoList.add(taskInfoIter.next());
+                        nodeTaskList.put(nodeId, tempTaskInfoList);
+                        tempTaskIdList.add(taskInfoIter.next().getTaskId());
+                        nodeTaskIdList.put(nodeId, tempTaskIdList);
+                    }
+                    taskInfoIter.remove();
+                }
+                // 遍历分数
+                Map<Integer, Integer> nodeIdTime = new LinkedHashMap<Integer, Integer>();
+                Iterator<Map.Entry<Integer, ArrayList<TaskInfo>>> iter = nodeTaskList.entrySet().iterator();
+                while (iter.hasNext()) {
+                    int totalTime = 0;
+                    Map.Entry<Integer, ArrayList<TaskInfo>> e = iter.next();
+                    if (e.getValue() == null)
+                        continue;
+                    for (TaskInfo taskInfo : e.getValue()) {
+                        totalTime += taskInfo.getTaskConsumption();
+                    }
+                    nodeIdTime.put(e.getKey(), totalTime);
+                }
+                //比较是否满足条件
+                int i = 0;
+                for (; i < nodeIdList.size() - 2; i++) {
+                    int nodeId1 = nodeIdList.get(i);
+                    int ndoeId2 = nodeIdList.get(i + 1);
+                    int time1 = nodeIdTime.get(nodeId1);
+                    int time2 = nodeIdTime.get(ndoeId2);
+                    if (Math.abs(time1 - time2) > threshold)
+                        continue;
+                }
+                if(i == nodeIdList.size()-2)
+                {
+                   // registerInfo.get
+
+                    break;
+                }
+                tryTime++;
             }
 
-            //if(registerInfo.getRunningTaskMap().size() > 0){
-
-            //}
+            //计划每个
             //没有挂起的任务，进行最佳调度策略
             return ReturnCodeKeys.E013;
         }
